@@ -73,7 +73,7 @@ if __name__ == '__main__':
      else:
           if ode_class.__name__ == "FLOWMATCHING":
                name_save_dir_path = f"dataset_{dataset}_mode_{args.mode_condition}_sigma_min_{args.sigma_min}_sigma_max_{args.sigma_max}_T_rev_{args.T_rev}_t_eps_{args.t_eps}"
-               logger = WandbLogger(project=f"KD_flowmatching", log_model=True, save_dir="logs", name=name_save_dir_path)
+               logger = WandbLogger(project=f"KD_flowmatching_tiny", log_model=True, save_dir="logs", name=name_save_dir_path)
           
           
           else:

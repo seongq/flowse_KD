@@ -128,7 +128,11 @@ if __name__ == '__main__':
                 if N==0:
                     continue
                 if i == 0:
-                    xt, _ = model.ode.prior_sampling(Y.shape, Y)
+                    if "zero_mean" in model.mode_condition:
+                        x1 ,_= model.ode.prior_sampling(Y.shape,torch.zeros_like(Y))
+                    elif "noisy_mean" in model.mode_condition:
+                        x1 ,_= model.ode.prior_sampling(Y.shape,Y)
+                    xt = x1
                     CONDITION = Y
                     ENHANCED = Y
                 else:

@@ -29,12 +29,13 @@ class VFModel(pl.LightningModule):
         parser.add_argument("--num_eval_files", type=int, default=10, help="Number of files for speech enhancement performance evaluation during training. Pass 0 to turn off (no checkpoints based on evaluation metrics will be generated).")
         parser.add_argument("--loss_type", type=str, default="mse", help="The type of loss function to use.")
         parser.add_argument("--loss_abs_exponent", type=float, default= 0.5,  help="magnitude transformation in the loss term")
-        parser.add_argument("--mode_condition", type=str, required=True, choices=("cc", "cn", "nc", "nn","random"))
+        parser.add_argument("--mode_condition", type=str, required=True, choices=("ori_ora_kd_zero_mean",
+"ori_ora_kd_noisy_mean","ori_ora_kd","ori_ora","ori_kd","ora_kd","ori","ori_ora_kd_nograd","ori_kd_nograd","ora_kd_nograd"))
         return parser
 
     def __init__(
         self, backbone, ode, lr=1e-4, ema_decay=0.999, t_eps=0.03, T_rev = 1.0,  loss_abs_exponent=0.5, 
-        num_eval_files=10, loss_type='mse', data_module_cls=None, N_enh=10, mode_condition="cc", **kwargs
+        num_eval_files=10, loss_type='mse', data_module_cls=None, N_enh=10, mode_condition="ori_ora_kd_zero_mean", **kwargs
     ):
         """
         Create a new ScoreModel.
@@ -135,34 +136,73 @@ class VFModel(pl.LightningModule):
         x0, y = batch
         rdm = (1-torch.rand(x0.shape[0], device=x0.device)) * (self.T_rev - self.t_eps) + self.t_eps        
         t = torch.min(rdm, torch.tensor(self.T_rev))
-        mean, std = self.ode.marginal_prob(x0, t, y)
-        z = torch.randn_like(x0)  #
-        sigmas = std[:, None, None, None]
-        xt = mean + sigmas * z
-        der_std = self.ode.der_std(t)
-        der_mean = self.ode.der_mean(x0,t,y)
-        condVF = der_std * z + der_mean    
-        VECTORFIELD_origin = self(xt,t,y,y)
-        loss_original_flow = self._loss(VECTORFIELD_origin,condVF)
-        with torch.no_grad():
-            if self.mode_condition == "cc":
-                VECTORFIELD_CLEAN =  self(xt,t,x0,x0)
-            elif self.mode_condition == "cn":
-                VECTORFIELD_CLEAN =  self(xt,t,x0,y)
-            elif self.mode_condition == "nc":
-                VECTORFIELD_CLEAN =  self(xt,t,y,x0)
-            elif self.mode_condition == "random":
-                choices = ["cc", "cn","nc"]
-                selected = random.choice(choices)
-                if self.mode_condition == "cc":
-                    VECTORFIELD_CLEAN =  self(xt,t,x0,x0)
-                elif self.mode_condition == "cn":
-                    VECTORFIELD_CLEAN =  self(xt,t,x0,y)
-                elif self.mode_condition == "nc":
-                    VECTORFIELD_CLEAN =  self(xt,t,y,x0)  
+        # mean, std = self.ode.marginal_prob(x0, t, y)
+        # z = torch.randn_like(x0)  #
+        # sigmas = std[:, None, None, None]
+        # xt = mean + sigmas * z
+        # der_std = self.ode.der_std(t)
+        # der_mean = self.ode.der_mean(x0,t,y)
+        # condVF = der_std * z + der_mean   #target
+        # VECTORFIELD_origin = self(xt,t,y,y)
+        # loss_original_flow = self._loss(VECTORFIELD_origin,condVF)
+    # "ori_ora_kd","ori_ora","ori_kd","ora_kd","ori","ori_ora_kd_nograd","ori_kd_nograd","ora_kd_nograd"
+        if self.mode_condition == "ori_ora_kd_zero_mean":
+            mean, std = self.ode.marginal_prob(x0, t, torch.zeros_like(y))
+            z = torch.randn_like(x0)  #
+            sigmas = std[:, None, None, None]
+            xt = mean + sigmas * z
+            der_std = self.ode.der_std(t)
+            der_mean = self.ode.der_mean(x0,t,torch.zeros_like(y))
+            condVF = der_std * z + der_mean   #target
+            VECTORFIELD_CLEAN =  self(xt,t,y,x0)
+            VECTORFIELD_origin = self(xt,t,y,y)
+            loss_original_flow = self._loss(VECTORFIELD_origin,condVF)
+            loss_oracle_flow = self._loss(VECTORFIELD_CLEAN,condVF)
+            loss_kd = self._loss(VECTORFIELD_origin,VECTORFIELD_CLEAN)
+            loss = loss_original_flow+loss_oracle_flow+loss_kd
+        elif self.mode_condition == "ori_ora_kd_noisy_mean":
+            mean, std = self.ode.marginal_prob(x0, t, y)
+            z = torch.randn_like(x0)  #
+            sigmas = std[:, None, None, None]
+            xt = mean + sigmas * z
+            der_std = self.ode.der_std(t)
+            der_mean = self.ode.der_mean(x0,t,y)
+            condVF = der_std * z + der_mean   #target
+            VECTORFIELD_CLEAN =  self(xt,t,y,x0)
+            VECTORFIELD_origin = self(xt,t,y,y)
+            loss_original_flow = self._loss(VECTORFIELD_origin,condVF)
+            loss_oracle_flow = self._loss(VECTORFIELD_CLEAN,condVF)
+            loss_kd = self._loss(VECTORFIELD_origin,VECTORFIELD_CLEAN)
+            loss = loss_original_flow+loss_oracle_flow+loss_kd
+        # elif self.mode_condition == "ori_ora":
+        #     with torch.no_grad():
+        #         VECTORFIELD_CLEAN =  self(xt,t,x0,y)                
+        # elif self.mode_condition == "ori_kd":
+        #     VECTORFIELD_CLEAN =  self(xt,t,x0,x0)
+        # elif self.mode_condition == "ora_kd":
+        #     VECTORFIELD_CLEAN =  self(xt,t,x0,y)
+        # elif self.mode_condition == "ori":
+        #     VECTORFIELD_CLEAN =  self(xt,t,x0,y)
+        # elif self.mode_condition == "ori_ora_kd_nograd":
+        #     VECTORFIELD_CLEAN =  self(xt,t,x0,y)
+        # elif self.mode_condition == "ori_kd_nograd":
+        #     VECTORFIELD_CLEAN =  self(xt,t,x0,y)
+        # elif self.mode_condition == "ora_kd_nograd":
+        #     VECTORFIELD_CLEAN =  self(xt,t,x0,y)
+        #     # elif self.mode_condition == "nc":
+        #     #     VECTORFIELD_CLEAN =  self(xt,t,y,x0)
+        #     # elif self.mode_condition == "random":
+        #     #     choices = ["cc", "cn","nc"]
+        #     #     selected = random.choice(choices)
+        #     #     if self.mode_condition == "cc":
+        #     #         VECTORFIELD_CLEAN =  self(xt,t,x0,x0)
+        #     #     elif self.mode_condition == "cn":
+        #     #         VECTORFIELD_CLEAN =  self(xt,t,x0,y)
+        #     #     elif self.mode_condition == "nc":
+        #     #         VECTORFIELD_CLEAN =  self(xt,t,y,x0)  
             
-        loss_kd = self._loss(VECTORFIELD_CLEAN, VECTORFIELD_origin)
-        loss = loss_original_flow + loss_kd
+        #     loss_kd = self._loss(VECTORFIELD_CLEAN, VECTORFIELD_origin)
+        #     loss = loss_original_flow + loss_kd
         return loss
     
     def training_step(self, batch, batch_idx):

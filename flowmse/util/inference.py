@@ -47,7 +47,11 @@ def evaluate_model(model, num_eval_files, inference_N=5):
         # Prepare DNN input
         Y = torch.unsqueeze(model._forward_transform(model._stft(y.cuda())), 0)
         Y = pad_spec(Y)
-        x1 ,_= model.ode.prior_sampling(Y.shape,Y)
+        
+        if "zero_mean" in model.mode_condition:
+            x1 ,_= model.ode.prior_sampling(Y.shape,torch.zeros_like(Y))
+        elif "noisy_mean" in model.mode_condition:
+            x1 ,_= model.ode.prior_sampling(Y.shape,Y)
         
         
         xt = x1
